@@ -1,0 +1,14 @@
+{
+  "name": "backpack-ui",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Scripts": {
+        "$path": "src/ReplicatedStorage/Scripts",
+        "$ignoreUnknownInstances": true
+      }
+    }
+  },
+  "globIgnorePaths": ["**/wally.toml"]
+}
