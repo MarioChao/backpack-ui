@@ -1,6 +1,10 @@
 # Changelogs
 
-## [v1.0.0] Customized backpack ui | 2026/01/25
+## [v1.0.1] Swap item layout order fix | 2026/01/25 (2)
+
+Layout order is now swapped when swapping inventory item and a hotbar item.
+
+## [v1.0.0] Customized backpack ui | 2026/01/25 (1)
 
 Created a customized backpack ui with many functionalities:
 - Tool tip that shows when hovering or dragging items.

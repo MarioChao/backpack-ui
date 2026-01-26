@@ -283,6 +283,11 @@ setUpItemSlotButton = function(itemSlotInfo: ItemSlotInfo)
                 local swappedItemSlotInfo = getHotbarSlotItemSlotInfo(hotbarSlotFrame)
                 if swappedItemSlotInfo then
                     swappedItemSlotInfo.mainButton.Parent = initialContainer
+
+                    -- Swap layout order
+                    itemSlotButton.LayoutOrder = swappedItemSlotInfo.mainButton.LayoutOrder
+                    swappedItemSlotInfo.mainButton.LayoutOrder = initialLayoutOrder
+
                     refreshItemSlot(swappedItemSlotInfo)
                 end
                 itemSlotButton.Parent = hotbarSlotFrame
