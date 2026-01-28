@@ -1,5 +1,10 @@
 # Changelogs
 
+## [v1.0.2] Tool name with special characters fix | 2026/01/27
+
+Fixed issues that occur when tool names contain special characters.
+- Replaced `:QueryDescendants()` to find first child.
+
 ## [v1.0.1] Swap item layout order fix | 2026/01/25 (2)
 
 Layout order is now swapped when swapping inventory item and a hotbar item.

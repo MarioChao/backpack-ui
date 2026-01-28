@@ -99,6 +99,8 @@ Globals.currentlyDraggedItemSlotInfo = nil :: ItemSlotInfo?
 
 ---------- Local functions ----------
 
+local getFirstChildrenAdvanced
+
 local getIsHoveringOverGuiObject
 local getHoveredGuis
 local getHoveredGuisSet
@@ -129,6 +131,20 @@ local refreshInventoryVisible
 local setUpInventorySearch
 
 local setUpToolTip
+
+
+----- Get children -----
+
+getFirstChildrenAdvanced = function(parent: Instance, name: string, isA_className: string): Instance?
+    local result
+    for _, object in parent:GetChildren() do
+        if object.Name == name and object:IsA(isA_className) then
+            result = object
+            break
+        end
+    end
+    return result
+end
 
 
 ----- Hover helper -----
@@ -198,7 +214,7 @@ getHoveredHotbarSlotFrame = function(): Frame?
 end
 
 getHotbarSlotItemSlotInfo = function(hotbarSlotFrame: GuiObject): ItemSlotInfo?
-    local itemSlotButton = hotbarSlotFrame:QueryDescendants("> TextButton")[1]
+    local itemSlotButton = hotbarSlotFrame:FindFirstChildWhichIsA("TextButton")
     local toolName
     local itemSlotInfo
     local result
@@ -224,6 +240,7 @@ createNewItemSlot = function(tool: Tool)
     local itemSlotButton = Constants.backpack_uis.defaultItemSlotButton:Clone()
     local itemSlotInfo = {
         toolName = tool.Name,
+        toolTip = tool.ToolTip,
         mainButton = itemSlotButton,
         multiplier_TextLabel = itemSlotButton:WaitForChild("Multiplier_TextLabel") :: TextLabel,
         selectionBox_Frame = itemSlotButton:WaitForChild("SelectionBox_Frame") :: Frame,
@@ -391,7 +408,7 @@ refreshItemSlot = function(itemSlotInfo: ItemSlotInfo)
 
     local exampleTool
     local character = Constants.localPlayer.Character
-    exampleTool = character and character:QueryDescendants(`> Tool#{toolName}`)[1]
+    exampleTool = character and getFirstChildrenAdvanced(character, toolName, "Tool")
     exampleTool = exampleTool or Constants.localPlayer.Backpack:FindFirstChild(toolName)
     if exampleTool and exampleTool:IsA("Tool") then
         -- Tool icon / tool name
