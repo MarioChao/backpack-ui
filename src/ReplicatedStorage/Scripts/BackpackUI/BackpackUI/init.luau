@@ -91,6 +91,7 @@ Globals.tool_toolChangedConnection = {} :: {[Instance]: RBXScriptConnection}
 Globals.tool_toolName = {} :: {[Instance]: string}
 
 Globals.hotbarSlotFrames = {} :: {Frame}
+Globals.hotbarSlotFrame_exist = {} :: {[Frame]: boolean}
 
 Globals.currentlyEquippedToolName = nil :: string?
 Globals.currentlyEquippedTool = nil :: Instance?
@@ -110,6 +111,8 @@ local getAndIncrementHighestLayoutOrder
 local setUpDefaultHotbarSlots
 local getHoveredHotbarSlotFrame
 local getHotbarSlotItemSlotInfo
+local getParentHotbarSlotFrame
+local refreshHotbarSlotFrameVisible
 
 local createNewItemSlot
 local setUpItemSlotButton
@@ -197,6 +200,10 @@ setUpDefaultHotbarSlots = function()
         hotbarSlotFrame.Parent = Constants.backpack_uis.hotbarFrame
         table.insert(Globals.hotbarSlotFrames, hotbarSlotFrame)
     end
+    table.clear(Globals.hotbarSlotFrame_exist)
+    for _, frame in Globals.hotbarSlotFrames do
+        Globals.hotbarSlotFrame_exist[frame] = true
+    end
 end
 
 getHoveredHotbarSlotFrame = function(): Frame?
@@ -213,7 +220,7 @@ getHoveredHotbarSlotFrame = function(): Frame?
     return result
 end
 
-getHotbarSlotItemSlotInfo = function(hotbarSlotFrame: GuiObject): ItemSlotInfo?
+getHotbarSlotItemSlotInfo = function(hotbarSlotFrame: Frame): ItemSlotInfo?
     local itemSlotButton = hotbarSlotFrame:FindFirstChildWhichIsA("TextButton")
     local toolName
     local itemSlotInfo
@@ -228,6 +235,24 @@ getHotbarSlotItemSlotInfo = function(hotbarSlotFrame: GuiObject): ItemSlotInfo?
         end
     end
     return result
+end
+
+getParentHotbarSlotFrame = function(itemSlotInfo: ItemSlotInfo): Frame?
+    local buttonParent = itemSlotInfo.mainButton.Parent
+    local result
+    if buttonParent and buttonParent:IsA("Frame") and Globals.hotbarSlotFrame_exist[buttonParent] then
+        result = buttonParent
+    end
+    return result
+end
+
+refreshHotbarSlotFrameVisible = function(hotbarSlotFrame: Frame)
+    if Globals.inventoryEnabled then
+        hotbarSlotFrame.Visible = true
+    else
+        local hasTool = getHotbarSlotItemSlotInfo(hotbarSlotFrame) ~= nil
+        hotbarSlotFrame.Visible = hasTool
+    end
 end
 
 
@@ -546,12 +571,20 @@ onItemRemoved = function(tool: Instance, _toolName: string?)
             unequipItem()
         end
         if Globals.toolName_count[toolName] == 0 then
-            -- Remove count & item slot
+            -- Retrieve gui info
             local itemSlotInfo = Globals.toolName_itemSlotInfo[toolName]
+            local hotbarSlotFrame = getParentHotbarSlotFrame(itemSlotInfo)
+
+            -- Remove count & item slot
             itemSlotInfo.mainButton:Destroy()
             Globals.toolName_count[toolName] = nil
             Globals.toolName_itemSlotInfo[toolName] = nil
             Globals.itemSlotButton_toolName[itemSlotInfo.mainButton] = nil
+
+            -- Hide hotbar slot if needed
+            if hotbarSlotFrame then
+                refreshHotbarSlotFrameVisible(hotbarSlotFrame)
+            end
         else
             refreshItemSlotByName(tool.Name)
         end
@@ -568,7 +601,7 @@ onCharacterAdded = function(character: Model)
         table.insert(existingTools, tool)
     end
     for _, tool in existingTools do
-        onItemRemoved(tool)
+        onItemRemoved(tool, nil)
     end
 
     -- Populate the backpack
@@ -613,12 +646,7 @@ end
 refreshInventoryVisible = function()
     Constants.backpack_uis.inventoryFrame.Visible = Globals.inventoryEnabled
     for _, hotbarSlotFrame in Globals.hotbarSlotFrames do
-        if Globals.inventoryEnabled then
-            hotbarSlotFrame.Visible = true
-        else
-            local hasTool = getHotbarSlotItemSlotInfo(hotbarSlotFrame) ~= nil
-            hotbarSlotFrame.Visible = hasTool
-        end
+        refreshHotbarSlotFrameVisible(hotbarSlotFrame)
     end
 end
 
