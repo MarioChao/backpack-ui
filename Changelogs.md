@@ -1,9 +1,12 @@
 # Changelogs
 
+## [v1.0.4] Small UI change | 2026/03/09
+
+Made the tool name `TextLabel` smaller so selection box won't cover the text.
+
 ## [v1.0.3] Hiding hotbar slot fix | 2026/02/23
 
 Fixed hotbar slot remaining visible when the corresponding item is removed.
-
 
 ## [v1.0.2] Tool name with special characters fix | 2026/01/27
 
