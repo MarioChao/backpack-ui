@@ -167,9 +167,7 @@ getHoveredGuis = function()
 end
 
 getHoveredGuisSet = function()
-    local mousePosition = UserInputService:GetMouseLocation()
-    local positionInsetted = mousePosition - GuiService:GetGuiInset()
-    local hoveredGuis = Constants.playerGui:GetGuiObjectsAtPosition(positionInsetted.X, positionInsetted.Y)
+    local hoveredGuis = getHoveredGuis()
     local gui_hovered = {} :: {[GuiObject]: boolean}
 
     -- Get hovered guis

@@ -4,9 +4,13 @@
     "$className": "DataModel",
 
     "ReplicatedStorage": {
-      "Scripts": {
-        "$path": "src/ReplicatedStorage/Scripts",
-        "$ignoreUnknownInstances": true
+      "Modules": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+
+        "BackpackUI": {
+          "$path": "src/BackpackUI"
+        }
       }
     }
   },

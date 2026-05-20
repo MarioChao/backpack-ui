@@ -12,7 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 
 ---------- Imports ----------
 
-local BackpackUI = require(script.Parent:WaitForChild("BackpackUI"))
+local BackpackUI = require(script.Parent)
 
 
 ---------- Constants ----------

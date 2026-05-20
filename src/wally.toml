@@ -1,0 +1,12 @@
+[package]
+name = "mariochao/backpack-ui"
+description = "Customized backpack user interface with inventory sorting + item stacking."
+
+version = "1.0.5"
+license = "MIT"
+authors = ["Mario Chao"]
+realm = "shared"
+registry = "https://github.com/UpliftGames/wally-index"
+repository = "https://github.com/MarioChao/backpack-ui"
+
+[dependencies]

@@ -1,5 +1,19 @@
 # Changelogs
 
+## [v1.0.5] Reorganization + Wally package | 2026/05/20
+
+Reorganized the repository:
+- Shortened `src/ReplicatedStorage/Scripts/BackpackUI` to `src/BackpackUI`.
+- Ungrouped the `BackpackUI` subfolder under the main `BackpackUI`.
+
+Added `wally.toml` and MIT license.
+
+Slightly modified the repository description.
+
+Added "credits" section to [README](README.md).
+
+Some minor code changes.
+
 ## [v1.0.4] Small UI change | 2026/03/09
 
 Made the tool name `TextLabel` smaller so selection box won't cover the text.
