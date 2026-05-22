@@ -1,5 +1,11 @@
 # Changelogs
 
+## [v1.0.6] Faster loading | 2026/05/22
+
+Removed `playerGui:WaitForChild` for preset `Backpack_ScreenGui`.
+- Greatly reduces the loading time.
+- The "wait for 1 second" preset feature doesn't really work since `StarterGui` only parents to `PlayerGui` when the character is first loaded.
+
 ## [v1.0.5] Reorganization + Wally package | 2026/05/20
 
 Reorganized the repository:

@@ -39,13 +39,7 @@ Constants.playerGui = Constants.localPlayer.PlayerGui
 do
     local backpack_uis = {}
     backpack_uis.screenGui = (function()
-        local child = Constants.playerGui:WaitForChild("Backpack_ScreenGui", 1)
-        local result
-        if child and child:IsA("ScreenGui") then
-            result = child :: typeof(script:WaitForChild("Backpack_ScreenGui"))
-        else
-            result = script:WaitForChild("Backpack_ScreenGui"):Clone()
-        end
+        local result = script:WaitForChild("Backpack_ScreenGui"):Clone()
         result.Enabled = false
         return result
     end)()
