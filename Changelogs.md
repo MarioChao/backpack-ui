@@ -1,5 +1,10 @@
 # Changelogs
 
+## [v1.1.0] Custom preset screen gui | 2026/08/16
+
+Readded preset `Backpack_ScreenGui` customization.
+- Simply copy a `Backpack_ScreenGui` to `StarterGui`, then that screen gui will be used instead of the default one.
+
 ## [v1.0.6] Faster loading | 2026/05/22
 
 Removed `playerGui:WaitForChild` for preset `Backpack_ScreenGui`.

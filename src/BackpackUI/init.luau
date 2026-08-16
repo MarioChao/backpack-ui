@@ -8,6 +8,7 @@
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 if not RunService:IsClient() then
@@ -36,10 +37,36 @@ local Constants = {}
 Constants.localPlayer = Players.LocalPlayer :: Player
 Constants.playerGui = Constants.localPlayer.PlayerGui
 
+Constants.screenGuiName = "Backpack_ScreenGui"
+Constants.screenGuiTagName = "BackpackUI"
+
 do
     local backpack_uis = {}
     backpack_uis.screenGui = (function()
-        local result = script:WaitForChild("Backpack_ScreenGui"):Clone()
+        local result
+
+        -- Retrieve custom screen gui, or default if none found
+        local starterGuiBackpack = StarterGui:FindFirstChild(Constants.screenGuiName)
+        if starterGuiBackpack then
+            -- Clone preset screen gui
+            result = starterGuiBackpack:Clone() :: typeof(script.Backpack_ScreenGui)
+            if result.ResetOnSpawn then
+                warn(`[Backpack UI]: Custom '{result.Name}' should have ResetOnSpawn set to false!`)
+            end
+
+            -- Clear future screen guis
+            Constants.playerGui.ChildAdded:Connect(function(child: Instance)
+                if child:IsA("ScreenGui") and child.Name == Constants.screenGuiName then
+                    if child ~= result then
+                        child:Destroy()
+                    end
+                end
+            end)
+        else
+            result = script:WaitForChild(Constants.screenGuiName):Clone()
+            result.ResetOnSpawn = false
+        end
+        result:AddTag(Constants.screenGuiTagName)
         result.Enabled = false
         return result
     end)()
@@ -267,6 +294,9 @@ createNewItemSlot = function(tool: Tool)
     } :: ItemSlotInfo
     Globals.toolName_itemSlotInfo[tool.Name] = itemSlotInfo
     Globals.itemSlotButton_toolName[itemSlotButton] = tool.Name
+
+    -- Set initial properties
+    itemSlotButton.SelectionBox_Frame.Visible = false
 
     -- Put in hotbar if possible, or else put in inventory
     local freeHotbarSlotFrame

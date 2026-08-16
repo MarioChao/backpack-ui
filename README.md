@@ -2,8 +2,15 @@
 
 Customized backpack user interface with inventory sorting + item stacking.
 
+## Usages
+
+The backpack comes with standard keybinds:
 - `` ` `` to toggle inventory.
 - `0`-`9` to toggle equip hotbar tools.
+
+This backpack won't show up on devices without keyboard as primary input.
+
+You can customize the screen gui by placing a custom [Backpack_ScreenGui](https://create.roblox.com/store/asset/118582755988322/BackpackScreenGui-Template) under `StarterGui`.
 
 ## Credits
 
