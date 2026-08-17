@@ -1,6 +1,10 @@
 # Changelogs
 
-## [v1.1.0] Custom preset screen gui | 2026/08/16
+## [v1.1.1] Clearing existing screen gui | 2026/08/16 (2)
+
+In situations where `BackpackUI` is required after a `Backpack_ScreenGui` has been parented to `PlayerGui`, that parented screen gui will now be cleared.
+
+## [v1.1.0] Custom preset screen gui | 2026/08/16 (1)
 
 Readded preset `Backpack_ScreenGui` customization.
 - Simply copy a `Backpack_ScreenGui` to `StarterGui`, then that screen gui will be used instead of the default one.

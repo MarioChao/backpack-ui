@@ -62,6 +62,17 @@ do
                     end
                 end
             end)
+
+            -- Clear current extra screen guis
+            task.defer(function()
+                for _, child in Constants.playerGui:GetChildren() do
+                    if child:IsA("ScreenGui") and child.Name == Constants.screenGuiName then
+                        if child ~= result then
+                            child:Destroy()
+                        end
+                    end
+                end
+            end)
         else
             result = script:WaitForChild(Constants.screenGuiName):Clone()
             result.ResetOnSpawn = false
