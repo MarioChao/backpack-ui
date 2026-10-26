@@ -37,9 +37,16 @@ local Constants = {}
 Constants.localPlayer = Players.LocalPlayer :: Player
 Constants.playerGui = Constants.localPlayer.PlayerGui
 
+Constants.timeFn = time
+Constants.epsilonTime = 1e-5
+
 Constants.backpack_remoteEvent = script:WaitForChild("Backpack_RemoteEvent")
 
 Constants.bagButtonPadding = 6
+Constants.black = Color3.new(0, 0, 0)
+Constants.white = Color3.new(1, 1, 1)
+Constants.clickedLightenLerp = 0.2
+Constants.hoveredDarkenLerp = 0.2
 
 Constants.screenGuiName = "Backpack_ScreenGui"
 Constants.screenGuiTagName = "BackpackUI"
@@ -136,8 +143,14 @@ Globals.tool_toolName = {} :: {[Instance]: string}
 Globals.hotbarSlotFrames = {} :: {Frame}
 Globals.hotbarSlotFrame_exist = {} :: {[Frame]: boolean}
 
+Globals.hoveredGuisCache = {} :: {GuiObject}
+Globals.hoveredGuisSetCache = {} :: {[GuiObject]: true?}
+Globals.lastHoveredGuisUpdateTime = Constants.timeFn() - 1
+Globals.lastHoveredGuisSetUpdateTime = Constants.timeFn() - 1
+
 Globals.currentlyEquippedToolName = nil :: string?
 Globals.currentlyEquippedTool = nil :: Instance?
+Globals.currentlyClickedItemSlotInfo = nil :: ItemSlotInfo?
 Globals.currentlyDraggedItemSlotInfo = nil :: ItemSlotInfo?
 
 
@@ -145,9 +158,9 @@ Globals.currentlyDraggedItemSlotInfo = nil :: ItemSlotInfo?
 
 local getFirstChildrenAdvanced
 
-local getIsHoveringOverGuiObject
 local getHoveredGuis
 local getHoveredGuisSet
+local getIsHoveringOverGuiObject
 
 local getAndIncrementHighestLayoutOrder
 
@@ -158,6 +171,7 @@ local getParentHotbarSlotFrame
 local refreshHotbarSlotFrameVisible
 
 local createNewItemSlot
+local onItemSlotMouseDown
 local setUpItemSlotButton
 local getHoveredItemSlotInfos
 local normalizeItemSlotLayoutOrders
@@ -167,6 +181,7 @@ local toggleEquipItem
 local unequipItem
 local onItemEquipped
 local queryEquipItem
+local updateItemSlotButtonColors
 
 local onItemAdded
 local onItemRemoved: (Instance, string?) -> nil
@@ -176,9 +191,9 @@ local onCharacterAdded
 local toggleInventory
 local refreshInventoryVisible
 local setUpInventoryButton
-local setUpInventorySearch
+local updateInventoryByFilter
 
-local setUpToolTip
+local updateToolTip
 
 
 ----- Get children -----
@@ -197,30 +212,55 @@ end
 
 ----- Hover helper -----
 
-getIsHoveringOverGuiObject = function(object: GuiObject)
-    local mousePosition = UserInputService:GetMouseLocation()
-    local positionInsetted = mousePosition - GuiService:GetGuiInset()
-    local hoveredGuis = Constants.playerGui:GetGuiObjectsAtPosition(positionInsetted.X, positionInsetted.Y)
-    return table.find(hoveredGuis, object) ~= nil
-end
-
 getHoveredGuis = function()
+    -- Check cache
+    local nowTime = Constants.timeFn()
+    if nowTime < Globals.lastHoveredGuisUpdateTime + Constants.epsilonTime then
+        return Globals.hoveredGuisCache
+    end
+
+    -- Get from playerGui
     local mousePosition = UserInputService:GetMouseLocation()
     local positionInsetted = mousePosition - GuiService:GetGuiInset()
     local hoveredGuis = Constants.playerGui:GetGuiObjectsAtPosition(positionInsetted.X, positionInsetted.Y)
+
+    -- Set cache
+    Globals.hoveredGuisCache = hoveredGuis
+    Globals.lastHoveredGuisUpdateTime = nowTime
+    table.freeze(hoveredGuis)
+
+    -- Return
     return hoveredGuis
 end
 
 getHoveredGuisSet = function()
-    local hoveredGuis = getHoveredGuis()
-    local gui_hovered = {} :: {[GuiObject]: boolean}
+    -- Check cache
+    local nowTime = Constants.timeFn()
+    if nowTime < Globals.lastHoveredGuisSetUpdateTime + Constants.epsilonTime then
+        return Globals.hoveredGuisSetCache
+    end
 
     -- Get hovered guis
+    local hoveredGuis = getHoveredGuis()
+    local gui_hovered = {} :: {[GuiObject]: true?}
+
+    -- Convert to set
     for _, gui in hoveredGuis do
         gui_hovered[gui] = true
     end
 
+    -- Set cache
+    Globals.hoveredGuisSetCache = gui_hovered
+    Globals.lastHoveredGuisSetUpdateTime = nowTime
+    table.freeze(gui_hovered)
+
+    -- Return
     return gui_hovered
+end
+
+getIsHoveringOverGuiObject = function(object: GuiObject)
+    local hoveredGuisSet = getHoveredGuisSet()
+    return hoveredGuisSet[object] ~= nil
 end
 
 
@@ -347,134 +387,149 @@ createNewItemSlot = function(tool: Tool)
     refreshItemSlot(itemSlotInfo)
 end
 
+onItemSlotMouseDown = function(itemSlotInfo: ItemSlotInfo)
+    -- Initial info
+    local itemSlotButton = itemSlotInfo.mainButton
+    local initialPosition = itemSlotButton.Position
+    local initialAnchorPoint = itemSlotButton.AnchorPoint
+    local initialContainer = itemSlotButton.Parent
+    local initialLayoutOrder = itemSlotButton.LayoutOrder
+    local willToggleEquip = false
+
+    -- Initial container info
+    local initialContainerIsHotbar = initialContainer and initialContainer:IsA("Frame") and Globals.hotbarSlotFrame_exist[initialContainer]
+    local initialContainerIsInventory = initialContainer == Constants.backpack_uis.itemsScrollingFrame
+
+    -- Drag if inventory enabled, else listen for click
+    if Globals.inventoryEnabled then
+        -- Drag item
+        Globals.currentlyDraggedItemSlotInfo = itemSlotInfo
+        itemSlotButton.Parent = Constants.backpack_uis.screenGui
+
+        -- Show placeholder if dragging inventory item
+        if initialContainerIsInventory then
+            Constants.backpack_uis.itemDragPlaceholderFrame.Parent = initialContainer
+            Constants.backpack_uis.itemDragPlaceholderFrame.LayoutOrder = initialLayoutOrder
+            Constants.backpack_uis.itemDragPlaceholderFrame.Visible = true
+        end
+
+        -- Loop until release
+        while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+            -- Move item slot to the mouse position
+            local desiredPosition = UserInputService:GetMouseLocation()
+            itemSlotButton.Position = UDim2.fromOffset(desiredPosition.X, desiredPosition.Y)
+            task.wait()
+        end
+
+        -- No longer dragging
+        Globals.currentlyDraggedItemSlotInfo = nil
+
+        -- Resolve release
+        (function()
+            -- Check if mouse is hovering over hotbar slot
+            local hotbarSlotFrame = getHoveredHotbarSlotFrame()
+            if hotbarSlotFrame then
+                -- Swap item if needed
+                local swappedItemSlotInfo = getHotbarSlotItemSlotInfo(hotbarSlotFrame)
+                if swappedItemSlotInfo then
+                    swappedItemSlotInfo.mainButton.Parent = initialContainer
+
+                    -- Swap layout order
+                    itemSlotButton.LayoutOrder = swappedItemSlotInfo.mainButton.LayoutOrder
+                    swappedItemSlotInfo.mainButton.LayoutOrder = initialLayoutOrder
+
+                    refreshItemSlot(swappedItemSlotInfo)
+                end
+                itemSlotButton.Parent = hotbarSlotFrame
+
+                -- Toggle equip if layout order remains the same & within same container
+                if initialContainer == itemSlotButton.Parent then
+                    if itemSlotButton.LayoutOrder == initialLayoutOrder then
+                        willToggleEquip = true
+                    end
+                end
+
+                return
+            end
+
+            -- Check if mouse is hovering over the drag placeholder
+            if Constants.backpack_uis.itemDragPlaceholderFrame.Visible and getIsHoveringOverGuiObject(Constants.backpack_uis.itemDragPlaceholderFrame) then
+                -- Toggle equip
+                willToggleEquip = true
+
+                -- Parent to inventory
+                itemSlotButton.Parent = Constants.backpack_uis.itemsScrollingFrame
+
+                return
+            end
+
+            -- Check if mouse is hovering over another item slot
+            local hoveredItemSlotInfos = getHoveredItemSlotInfos()
+            local selectedItemSlotInfo
+            for _, hoveredItemSlotInfo: ItemSlotInfo in hoveredItemSlotInfos do
+                if hoveredItemSlotInfo ~= itemSlotInfo then
+                    selectedItemSlotInfo = hoveredItemSlotInfo
+                    break
+                end
+            end
+
+            -- Insert layout order if hovering, else put at end
+            if selectedItemSlotInfo then
+                -- Insert before if dragged from hotbar or a later item slot
+                -- else insert after
+                local selectedLayoutOrder = selectedItemSlotInfo.mainButton.LayoutOrder
+                if initialContainerIsHotbar or selectedLayoutOrder < initialLayoutOrder then
+                    itemSlotButton.LayoutOrder = selectedLayoutOrder - 1
+                else
+                    itemSlotButton.LayoutOrder = selectedLayoutOrder + 1
+                end
+                normalizeItemSlotLayoutOrders()
+            else
+                itemSlotButton.LayoutOrder = getAndIncrementHighestLayoutOrder()
+                normalizeItemSlotLayoutOrders()
+            end
+
+            -- Parent to inventory
+            itemSlotButton.Parent = Constants.backpack_uis.itemsScrollingFrame
+        end)()
+
+        -- Reset position properties
+        itemSlotButton.Position = initialPosition
+        itemSlotButton.AnchorPoint = initialAnchorPoint
+
+        -- Hide placeholder
+        Constants.backpack_uis.itemDragPlaceholderFrame.Visible = false
+    else
+        -- Click item
+        Globals.currentlyClickedItemSlotInfo = itemSlotInfo
+
+        -- Wait until mouse released
+        while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+            task.wait()
+        end
+
+        -- No longer clicking
+        Globals.currentlyClickedItemSlotInfo = nil
+
+        -- If hovering over same slot, equip/unequip tool
+        if getIsHoveringOverGuiObject(itemSlotButton) then
+            willToggleEquip = true
+        end
+    end
+
+    -- Toggle equip & refresh inventory
+    if willToggleEquip then
+        toggleEquipItem(itemSlotInfo)
+    end
+    refreshItemSlot(itemSlotInfo)
+    refreshInventoryVisible()
+end
+
 setUpItemSlotButton = function(itemSlotInfo: ItemSlotInfo)
     local itemSlotButton = itemSlotInfo.mainButton
     itemSlotButton.LayoutOrder = getAndIncrementHighestLayoutOrder()
     itemSlotButton.MouseButton1Down:Connect(function()
-        -- Initial info
-        local initialPosition = itemSlotButton.Position
-        local initialAnchorPoint = itemSlotButton.AnchorPoint
-        local initialContainer = itemSlotButton.Parent
-        local initialLayoutOrder = itemSlotButton.LayoutOrder
-        local willToggleEquip = false
-
-        -- Initial container info
-        local initialContainerIsHotbar = initialContainer and initialContainer:IsA("Frame") and Globals.hotbarSlotFrame_exist[initialContainer]
-        local initialContainerIsInventory = initialContainer == Constants.backpack_uis.itemsScrollingFrame
-
-        -- Check inventory enabled
-        if Globals.inventoryEnabled then
-            -- Drag item
-            Globals.currentlyDraggedItemSlotInfo = itemSlotInfo
-            itemSlotButton.Parent = Constants.backpack_uis.screenGui
-
-            -- Show placeholder if dragging inventory item
-            if initialContainerIsInventory then
-                Constants.backpack_uis.itemDragPlaceholderFrame.Parent = initialContainer
-                Constants.backpack_uis.itemDragPlaceholderFrame.LayoutOrder = initialLayoutOrder
-                Constants.backpack_uis.itemDragPlaceholderFrame.Visible = true
-            end
-
-            -- Loop until release
-            while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                -- Move item slot to the mouse position
-                local desiredPosition = UserInputService:GetMouseLocation()
-                itemSlotButton.Position = UDim2.fromOffset(desiredPosition.X, desiredPosition.Y)
-                task.wait()
-            end
-            Globals.currentlyDraggedItemSlotInfo = nil
-
-            -- Resolve release
-            (function()
-                -- Check if mouse is hovering over hotbar slot
-                local hotbarSlotFrame = getHoveredHotbarSlotFrame()
-                if hotbarSlotFrame then
-                    -- Swap item if needed
-                    local swappedItemSlotInfo = getHotbarSlotItemSlotInfo(hotbarSlotFrame)
-                    if swappedItemSlotInfo then
-                        swappedItemSlotInfo.mainButton.Parent = initialContainer
-
-                        -- Swap layout order
-                        itemSlotButton.LayoutOrder = swappedItemSlotInfo.mainButton.LayoutOrder
-                        swappedItemSlotInfo.mainButton.LayoutOrder = initialLayoutOrder
-
-                        refreshItemSlot(swappedItemSlotInfo)
-                    end
-                    itemSlotButton.Parent = hotbarSlotFrame
-
-                    -- Toggle equip if layout order remains the same & within same container
-                    if initialContainer == itemSlotButton.Parent then
-                        if itemSlotButton.LayoutOrder == initialLayoutOrder then
-                            willToggleEquip = true
-                        end
-                    end
-
-                    return
-                end
-
-                -- Check if mouse is hovering over the drag placeholder
-                if Constants.backpack_uis.itemDragPlaceholderFrame.Visible and getHoveredGuisSet()[Constants.backpack_uis.itemDragPlaceholderFrame] then
-                    -- Toggle equip
-                    willToggleEquip = true
-
-                    -- Parent to inventory
-                    itemSlotButton.Parent = Constants.backpack_uis.itemsScrollingFrame
-
-                    return
-                end
-
-                -- Check if mouse is hovering over another item slot
-                local hoveredItemSlotInfos = getHoveredItemSlotInfos()
-                local selectedItemSlotInfo
-                for _, hoveredItemSlotInfo: ItemSlotInfo in hoveredItemSlotInfos do
-                    if hoveredItemSlotInfo ~= itemSlotInfo then
-                        selectedItemSlotInfo = hoveredItemSlotInfo
-                        break
-                    end
-                end
-
-                -- Insert layout order if hovering, else put at end
-                if selectedItemSlotInfo then
-                    -- Insert before if dragged from hotbar or a later item slot
-                    -- else insert after
-                    local selectedLayoutOrder = selectedItemSlotInfo.mainButton.LayoutOrder
-                    if initialContainerIsHotbar or selectedLayoutOrder < initialLayoutOrder then
-                        itemSlotButton.LayoutOrder = selectedLayoutOrder - 1
-                    else
-                        itemSlotButton.LayoutOrder = selectedLayoutOrder + 1
-                    end
-                    normalizeItemSlotLayoutOrders()
-                else
-                    itemSlotButton.LayoutOrder = getAndIncrementHighestLayoutOrder()
-                    normalizeItemSlotLayoutOrders()
-                end
-
-                -- Parent to inventory
-                itemSlotButton.Parent = Constants.backpack_uis.itemsScrollingFrame
-            end)()
-
-            -- Reset position properties
-            itemSlotButton.Position = initialPosition
-            itemSlotButton.AnchorPoint = initialAnchorPoint
-
-            -- Hide placeholder
-            Constants.backpack_uis.itemDragPlaceholderFrame.Visible = false
-        else
-            -- Wait until mouse released
-            while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                task.wait()
-            end
-
-            -- If hovering over same slot, equip/unequip tool
-            if getIsHoveringOverGuiObject(itemSlotButton) then
-                willToggleEquip = true
-            end
-        end
-
-        if willToggleEquip then
-            toggleEquipItem(itemSlotInfo)
-        end
-        refreshItemSlot(itemSlotInfo)
+        onItemSlotMouseDown(itemSlotInfo)
     end)
 end
 
@@ -516,7 +571,7 @@ refreshItemSlot = function(itemSlotInfo: ItemSlotInfo)
     itemSlotInfo.multiplier_TextLabel.Text = `x{Globals.toolName_count[toolName]}`
     itemSlotInfo.multiplier_TextLabel.Visible = Globals.toolName_count[toolName] > 1
 
-    -- Tool slot
+    -- Tool slot number
     local buttonParent = itemSlotInfo.mainButton.Parent
     local isHotbarAncestryMet = buttonParent and buttonParent:IsDescendantOf(Constants.backpack_uis.hotbarFrame)
     if buttonParent and buttonParent:IsA("GuiObject") and isHotbarAncestryMet then
@@ -526,6 +581,7 @@ refreshItemSlot = function(itemSlotInfo: ItemSlotInfo)
         itemSlotInfo.slotNumber_TextLabel.Visible = false
     end
 
+    -- Tool info
     local exampleTool
     local character = Constants.localPlayer.Character
     exampleTool = character and getFirstChildrenAdvanced(character, toolName, "Tool")
@@ -612,6 +668,38 @@ queryEquipItem = function(itemSlotInfo: ItemSlotInfo)
                 end)
                 onItemEquipped(tool)
             end
+        end
+    end
+end
+
+updateItemSlotButtonColors = function()
+    -- Get base color
+    local baseBackgroundColor = Constants.backpack_uis.defaultItemSlotButton.BackgroundColor3
+
+    -- Currently clicked or dragged
+    local itemSlotButton_state = {} :: {[TextButton]: string}
+    local clickedItemSlotInfo = Globals.currentlyClickedItemSlotInfo or Globals.currentlyDraggedItemSlotInfo
+    if clickedItemSlotInfo then
+        itemSlotButton_state[clickedItemSlotInfo.mainButton] = "Clicked"
+    end
+
+    -- Hovered item slots
+    for _, itemSlotInfo in getHoveredItemSlotInfos() do
+        if itemSlotInfo ~= clickedItemSlotInfo then
+            itemSlotButton_state[itemSlotInfo.mainButton] = "Hovered"
+        end
+    end
+
+    -- Update colors
+    for _, itemSlotInfo in Globals.toolName_itemSlotInfo do
+        local itemSlotButton = itemSlotInfo.mainButton
+        local buttonState = itemSlotButton_state[itemSlotButton]
+        if buttonState == "Clicked" then
+            itemSlotButton.BackgroundColor3 = baseBackgroundColor:Lerp(Constants.white, Constants.clickedLightenLerp)
+        elseif buttonState == "Hovered" then
+            itemSlotButton.BackgroundColor3 = baseBackgroundColor:Lerp(Constants.black, Constants.hoveredDarkenLerp)
+        else
+            itemSlotButton.BackgroundColor3 = baseBackgroundColor
         end
     end
 end
@@ -781,60 +869,53 @@ setUpInventoryButton = function()
     end)
 end
 
-setUpInventorySearch = function()
-    RunService.Heartbeat:Connect(function()
-        local filterText = string.lower(Constants.backpack_uis.filterTextBox.Text)
-        for toolName, itemSlotInfo in Globals.toolName_itemSlotInfo do
-            -- Make sure to only filter tool in inventory and not in hotbar
-            if itemSlotInfo.mainButton:IsDescendantOf(Constants.backpack_uis.itemsScrollingFrame) then
-                local filterSuccessful = false
-                filterSuccessful = filterSuccessful or filterText == ""
-                if not filterSuccessful then
-                    local _, pcallResult = pcall(function()
-                        return string.match(string.lower(toolName), filterText) ~= nil
-                    end)
-                    filterSuccessful = filterSuccessful or pcallResult == true
-                end
-                itemSlotInfo.mainButton.Visible = filterSuccessful
+updateInventoryByFilter = function()
+    local filterText = string.lower(Constants.backpack_uis.filterTextBox.Text)
+    for toolName, itemSlotInfo in Globals.toolName_itemSlotInfo do
+        -- Make sure to only filter tool in inventory and not in hotbar
+        if itemSlotInfo.mainButton:IsDescendantOf(Constants.backpack_uis.itemsScrollingFrame) then
+            local filterSuccessful = false
+            filterSuccessful = filterSuccessful or filterText == ""
+            if not filterSuccessful then
+                local _, pcallResult = pcall(function()
+                    return string.match(string.lower(toolName), filterText) ~= nil
+                end)
+                filterSuccessful = filterSuccessful or pcallResult == true
             end
+            itemSlotInfo.mainButton.Visible = filterSuccessful
         end
-    end)
+    end
 end
 
 
 ----- Tool tip -----
 
-setUpToolTip = function()
-    RunService.Heartbeat:Connect(function()
-        local gui_hovered = getHoveredGuisSet()
-        local selectedItemSlotInfo
+updateToolTip = function()
+    local selectedItemSlotInfo
 
-        -- Get item slot that will show tool tip
-        if Globals.currentlyDraggedItemSlotInfo then
-            selectedItemSlotInfo = Globals.currentlyDraggedItemSlotInfo
-        else
-            for _, itemSlotInfo in Globals.toolName_itemSlotInfo do
-                if gui_hovered[itemSlotInfo.mainButton] then
-                    selectedItemSlotInfo = itemSlotInfo
-                    break
-                end
-            end
+    -- Get item slot that will show tool tip
+    if Globals.currentlyDraggedItemSlotInfo then
+        selectedItemSlotInfo = Globals.currentlyDraggedItemSlotInfo
+    else
+        local hoveredItemSlotInfos = getHoveredItemSlotInfos()
+        if next(hoveredItemSlotInfos) then
+            selectedItemSlotInfo = hoveredItemSlotInfos[1]
         end
+    end
 
-        -- Configure tool tip
-        if selectedItemSlotInfo and selectedItemSlotInfo.toolTip ~= "" then
-            local button = selectedItemSlotInfo.mainButton
-            local buttonAbsolutePosition = button.AbsolutePosition + GuiService:GetGuiInset()
-            Constants.backpack_uis.toolTipTextLabel.Text = selectedItemSlotInfo.toolTip
-            Constants.backpack_uis.toolTipTextLabel.Position = UDim2.fromOffset(
-                buttonAbsolutePosition.X + button.AbsoluteSize.X / 2,
-                buttonAbsolutePosition.Y - 5
-            )
-            Constants.backpack_uis.toolTipTextLabel.Visible = true
-        else
-            Constants.backpack_uis.toolTipTextLabel.Visible = false
-        end
-    end)
+    -- Configure tool tip
+    if selectedItemSlotInfo and selectedItemSlotInfo.toolTip ~= "" then
+        local button = selectedItemSlotInfo.mainButton
+        local buttonAbsolutePosition = button.AbsolutePosition + GuiService:GetGuiInset()
+        Constants.backpack_uis.toolTipTextLabel.Text = selectedItemSlotInfo.toolTip
+        Constants.backpack_uis.toolTipTextLabel.Position = UDim2.fromOffset(
+            buttonAbsolutePosition.X + button.AbsoluteSize.X / 2,
+            buttonAbsolutePosition.Y - 5
+        )
+        Constants.backpack_uis.toolTipTextLabel.Visible = true
+    else
+        Constants.backpack_uis.toolTipTextLabel.Visible = false
+    end
 end
 
 
@@ -846,11 +927,16 @@ local Module = {}
 ----- Module fields -----
 
 Module.connect = function(hotbarSlotsCount: number)
+    -- Validate not connected
     if Globals.isConnected then
         return
     end
     Globals.isConnected = true
+
+    -- Parent screen gui
     Constants.backpack_uis.screenGui.Parent = Constants.playerGui
+
+    -- Call functions
     local initialCharacter = Constants.localPlayer.Character
     if initialCharacter then
         task.defer(onCharacterAdded, initialCharacter)
@@ -858,8 +944,12 @@ Module.connect = function(hotbarSlotsCount: number)
     Constants.localPlayer.CharacterAdded:Connect(onCharacterAdded)
     setUpDefaultHotbarSlots(hotbarSlotsCount)
     setUpInventoryButton()
-    setUpInventorySearch()
-    setUpToolTip()
+
+    RunService.Heartbeat:Connect(function()
+        updateInventoryByFilter()
+        updateToolTip()
+        updateItemSlotButtonColors()
+    end)
 end
 
 Module.toggleInventory = function()

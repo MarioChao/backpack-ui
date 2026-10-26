@@ -1,6 +1,18 @@
 # Changelogs
 
-## [v1.2.0] Server-side equip + Mobile ui + Drag placeholder | 2026/10/25
+## [v1.2.1] Visual fixes | 2026/10/25 (2)
+
+Swapped items are no longer hidden when swapping hotbar slots while inventory is closed.
+
+Fixed hover button tint retaining when swapping items.
+
+Small fix on tool tip showing up when swapping items.
+- No longer shows above the other item being swapped.
+- Still a minor issue when dropping slots to the back of inventory.
+
+Some optimizations made for retrieving hovered GUIs.
+
+## [v1.2.0] Server-side equip + Mobile ui + Drag placeholder | 2026/10/25 (1)
 
 Added server-side tool equip if the client-side call didn't work:
 - Allows the backpack ui to work in experiences with server authority enabled.
