@@ -1,5 +1,19 @@
 # Changelogs
 
+## [v1.2.0] Server-side equip + Mobile ui + Drag placeholder | 2026/10/25
+
+Added server-side tool equip if the client-side call didn't work:
+- Allows the backpack ui to work in experiences with server authority enabled.
+
+Added mobile support.
+- Changed Backpack_ScreenGui's display order from 0 to 100 (prevents thumbstick interferring with item dragging).
+- Design inspired by that in [Frozen Soul](https://www.roblox.com/games/5475056496/Frozen-Soul).
+
+Added an extra button to toggle inventory:
+- Located at `Backpack_ScreenGui` > `Padded_Frame` > `ToggleBag_Button`.
+
+Added a placeholder slot so that other item slots don't shift when dragging.
+
 ## [v1.1.1] Clearing existing screen gui | 2026/08/16 (2)
 
 In situations where `BackpackUI` is required after a `Backpack_ScreenGui` has been parented to `PlayerGui`, that parented screen gui will now be cleared.

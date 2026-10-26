@@ -37,6 +37,10 @@ local Constants = {}
 Constants.localPlayer = Players.LocalPlayer :: Player
 Constants.playerGui = Constants.localPlayer.PlayerGui
 
+Constants.backpack_remoteEvent = script:WaitForChild("Backpack_RemoteEvent")
+
+Constants.bagButtonPadding = 6
+
 Constants.screenGuiName = "Backpack_ScreenGui"
 Constants.screenGuiTagName = "BackpackUI"
 
@@ -92,6 +96,13 @@ do
     backpack_uis.hotbarFrame = backpack_uis.paddedFrame:WaitForChild("Hotbar_Frame")
     backpack_uis.defaultHotbarSlotFrame = backpack_uis.hotbarFrame:WaitForChild("HotbarSlot_Frame")
     backpack_uis.defaultHotbarSlotFrame.Visible = false
+    backpack_uis.hotbarUIListLayout = backpack_uis.hotbarFrame:WaitForChild("UIListLayout")
+
+    backpack_uis.toggleBagButton = backpack_uis.paddedFrame:WaitForChild("ToggleBag_Button")
+    backpack_uis.toggleBagButton.Visible = false
+
+    backpack_uis.itemDragPlaceholderFrame = backpack_uis.paddedFrame:WaitForChild("ItemDragPlaceholder_Frame")
+    backpack_uis.itemDragPlaceholderFrame.Visible = false
 
     backpack_uis.defaultItemSlotButton = backpack_uis.paddedFrame:WaitForChild("ItemSlot_Button")
     backpack_uis.defaultItemSlotButton.Visible = false
@@ -162,7 +173,9 @@ local onItemRemoved: (Instance, string?) -> nil
 
 local onCharacterAdded
 
+local toggleInventory
 local refreshInventoryVisible
+local setUpInventoryButton
 local setUpInventorySearch
 
 local setUpToolTip
@@ -221,15 +234,19 @@ end
 
 ----- Hotbar -----
 
-setUpDefaultHotbarSlots = function()
+setUpDefaultHotbarSlots = function(hotbarSlotsCount: number)
     table.clear(Globals.hotbarSlotFrames)
-    for i = 1, 10 do
+
+    -- Create hotbar slots
+    for i = 1, hotbarSlotsCount do
         local hotbarSlotFrame = Constants.backpack_uis.defaultHotbarSlotFrame:Clone()
         hotbarSlotFrame.LayoutOrder = i
         hotbarSlotFrame.Name = `HotbarSlot_Frame_{string.format("%2d", i)}`
         hotbarSlotFrame.Parent = Constants.backpack_uis.hotbarFrame
         table.insert(Globals.hotbarSlotFrames, hotbarSlotFrame)
     end
+
+    -- Store existence info
     table.clear(Globals.hotbarSlotFrame_exist)
     for _, frame in Globals.hotbarSlotFrames do
         Globals.hotbarSlotFrame_exist[frame] = true
@@ -334,39 +351,78 @@ setUpItemSlotButton = function(itemSlotInfo: ItemSlotInfo)
     local itemSlotButton = itemSlotInfo.mainButton
     itemSlotButton.LayoutOrder = getAndIncrementHighestLayoutOrder()
     itemSlotButton.MouseButton1Down:Connect(function()
+        -- Initial info
         local initialPosition = itemSlotButton.Position
+        local initialAnchorPoint = itemSlotButton.AnchorPoint
         local initialContainer = itemSlotButton.Parent
         local initialLayoutOrder = itemSlotButton.LayoutOrder
         local willToggleEquip = false
+
+        -- Initial container info
+        local initialContainerIsHotbar = initialContainer and initialContainer:IsA("Frame") and Globals.hotbarSlotFrame_exist[initialContainer]
+        local initialContainerIsInventory = initialContainer == Constants.backpack_uis.itemsScrollingFrame
 
         -- Check inventory enabled
         if Globals.inventoryEnabled then
             -- Drag item
             Globals.currentlyDraggedItemSlotInfo = itemSlotInfo
             itemSlotButton.Parent = Constants.backpack_uis.screenGui
+
+            -- Show placeholder if dragging inventory item
+            if initialContainerIsInventory then
+                Constants.backpack_uis.itemDragPlaceholderFrame.Parent = initialContainer
+                Constants.backpack_uis.itemDragPlaceholderFrame.LayoutOrder = initialLayoutOrder
+                Constants.backpack_uis.itemDragPlaceholderFrame.Visible = true
+            end
+
+            -- Loop until release
             while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                -- Move item slot to the mouse position
                 local desiredPosition = UserInputService:GetMouseLocation()
                 itemSlotButton.Position = UDim2.fromOffset(desiredPosition.X, desiredPosition.Y)
                 task.wait()
             end
             Globals.currentlyDraggedItemSlotInfo = nil
 
-            -- Check if mouse is hovering over hotbar slot
-            local hotbarSlotFrame = getHoveredHotbarSlotFrame()
-            if hotbarSlotFrame then
-                -- Swap item if needed
-                local swappedItemSlotInfo = getHotbarSlotItemSlotInfo(hotbarSlotFrame)
-                if swappedItemSlotInfo then
-                    swappedItemSlotInfo.mainButton.Parent = initialContainer
+            -- Resolve release
+            (function()
+                -- Check if mouse is hovering over hotbar slot
+                local hotbarSlotFrame = getHoveredHotbarSlotFrame()
+                if hotbarSlotFrame then
+                    -- Swap item if needed
+                    local swappedItemSlotInfo = getHotbarSlotItemSlotInfo(hotbarSlotFrame)
+                    if swappedItemSlotInfo then
+                        swappedItemSlotInfo.mainButton.Parent = initialContainer
 
-                    -- Swap layout order
-                    itemSlotButton.LayoutOrder = swappedItemSlotInfo.mainButton.LayoutOrder
-                    swappedItemSlotInfo.mainButton.LayoutOrder = initialLayoutOrder
+                        -- Swap layout order
+                        itemSlotButton.LayoutOrder = swappedItemSlotInfo.mainButton.LayoutOrder
+                        swappedItemSlotInfo.mainButton.LayoutOrder = initialLayoutOrder
 
-                    refreshItemSlot(swappedItemSlotInfo)
+                        refreshItemSlot(swappedItemSlotInfo)
+                    end
+                    itemSlotButton.Parent = hotbarSlotFrame
+
+                    -- Toggle equip if layout order remains the same & within same container
+                    if initialContainer == itemSlotButton.Parent then
+                        if itemSlotButton.LayoutOrder == initialLayoutOrder then
+                            willToggleEquip = true
+                        end
+                    end
+
+                    return
                 end
-                itemSlotButton.Parent = hotbarSlotFrame
-            else
+
+                -- Check if mouse is hovering over the drag placeholder
+                if Constants.backpack_uis.itemDragPlaceholderFrame.Visible and getHoveredGuisSet()[Constants.backpack_uis.itemDragPlaceholderFrame] then
+                    -- Toggle equip
+                    willToggleEquip = true
+
+                    -- Parent to inventory
+                    itemSlotButton.Parent = Constants.backpack_uis.itemsScrollingFrame
+
+                    return
+                end
+
                 -- Check if mouse is hovering over another item slot
                 local hoveredItemSlotInfos = getHoveredItemSlotInfos()
                 local selectedItemSlotInfo
@@ -379,31 +435,37 @@ setUpItemSlotButton = function(itemSlotInfo: ItemSlotInfo)
 
                 -- Insert layout order if hovering, else put at end
                 if selectedItemSlotInfo then
+                    -- Insert before if dragged from hotbar or a later item slot
+                    -- else insert after
                     local selectedLayoutOrder = selectedItemSlotInfo.mainButton.LayoutOrder
-                    itemSlotButton.LayoutOrder = selectedLayoutOrder - 1
+                    if initialContainerIsHotbar or selectedLayoutOrder < initialLayoutOrder then
+                        itemSlotButton.LayoutOrder = selectedLayoutOrder - 1
+                    else
+                        itemSlotButton.LayoutOrder = selectedLayoutOrder + 1
+                    end
                     normalizeItemSlotLayoutOrders()
                 else
                     itemSlotButton.LayoutOrder = getAndIncrementHighestLayoutOrder()
                     normalizeItemSlotLayoutOrders()
                 end
 
+                -- Parent to inventory
                 itemSlotButton.Parent = Constants.backpack_uis.itemsScrollingFrame
-            end
-            itemSlotButton.Position = initialPosition
+            end)()
 
-            -- Toggle equip if layout order remains the same & within same container
-            if initialContainer == itemSlotButton.Parent then
-                if itemSlotButton.LayoutOrder == initialLayoutOrder then
-                    willToggleEquip = true
-                end
-            end
+            -- Reset position properties
+            itemSlotButton.Position = initialPosition
+            itemSlotButton.AnchorPoint = initialAnchorPoint
+
+            -- Hide placeholder
+            Constants.backpack_uis.itemDragPlaceholderFrame.Visible = false
         else
             -- Wait until mouse released
             while UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
                 task.wait()
             end
 
-            -- If hovering over slot, equip/unequip tool
+            -- If hovering over same slot, equip/unequip tool
             if getIsHoveringOverGuiObject(itemSlotButton) then
                 willToggleEquip = true
             end
@@ -510,6 +572,9 @@ unequipItem = function()
                 local equippedItemSlotInfo = Globals.toolName_itemSlotInfo[Globals.currentlyEquippedToolName]
                 equippedItemSlotInfo.selectionBox_Frame.Visible = false
                 humanoid:UnequipTools()
+                task.defer(function()
+                    Constants.backpack_remoteEvent:FireServer("UnequipTools")
+                end)
                 Globals.currentlyEquippedToolName = nil
                 Globals.currentlyEquippedTool = nil
                 refreshItemSlot(equippedItemSlotInfo)
@@ -542,6 +607,9 @@ queryEquipItem = function(itemSlotInfo: ItemSlotInfo)
             local tool = Constants.localPlayer.Backpack:FindFirstChild(itemSlotInfo.toolName)
             if tool and tool:IsA("Tool") then
                 humanoid:EquipTool(tool)
+                task.defer(function()
+                    Constants.backpack_remoteEvent:FireServer("EquipTool", tool)
+                end)
                 onItemEquipped(tool)
             end
         end
@@ -676,11 +744,41 @@ end
 
 ----- Inventory -----
 
+toggleInventory = function()
+    if Constants.backpack_uis.screenGui.Enabled then
+        Globals.inventoryEnabled = not Globals.inventoryEnabled
+        refreshInventoryVisible()
+    end
+end
+
 refreshInventoryVisible = function()
     Constants.backpack_uis.inventoryFrame.Visible = Globals.inventoryEnabled
+
+    -- Set visibility of each slots
     for _, hotbarSlotFrame in Globals.hotbarSlotFrames do
         refreshHotbarSlotFrameVisible(hotbarSlotFrame)
     end
+end
+
+setUpInventoryButton = function()
+    -- Calculate bag button position
+    do
+        local oneHotbarSlotWidth = Constants.backpack_uis.defaultHotbarSlotFrame.AbsoluteSize.Y
+        local hotbarSlotsCount = #Globals.hotbarSlotFrames
+        local listPaddingX = Constants.backpack_uis.hotbarUIListLayout.Padding.Offset
+        local hotbarWidth = (oneHotbarSlotWidth + listPaddingX) * hotbarSlotsCount
+        local offsetX = -hotbarWidth // 2 - Constants.bagButtonPadding
+        Constants.backpack_uis.toggleBagButton.Position = UDim2.new(
+            UDim.new(0.5, offsetX),
+            Constants.backpack_uis.toggleBagButton.Position.Y
+        )
+    end
+
+    -- Set up button clicked
+    Constants.backpack_uis.toggleBagButton.Visible = true
+    Constants.backpack_uis.toggleBagButton.Activated:Connect(function()
+        toggleInventory()
+    end)
 end
 
 setUpInventorySearch = function()
@@ -747,7 +845,7 @@ local Module = {}
 
 ----- Module fields -----
 
-Module.connect = function()
+Module.connect = function(hotbarSlotsCount: number)
     if Globals.isConnected then
         return
     end
@@ -758,16 +856,14 @@ Module.connect = function()
         task.defer(onCharacterAdded, initialCharacter)
     end
     Constants.localPlayer.CharacterAdded:Connect(onCharacterAdded)
-    setUpDefaultHotbarSlots()
+    setUpDefaultHotbarSlots(hotbarSlotsCount)
+    setUpInventoryButton()
     setUpInventorySearch()
     setUpToolTip()
 end
 
 Module.toggleInventory = function()
-    if Constants.backpack_uis.screenGui.Enabled then
-        Globals.inventoryEnabled = not Globals.inventoryEnabled
-        refreshInventoryVisible()
-    end
+    toggleInventory()
 end
 
 Module.toggleEquipHotbarSlot = function(slotNumber: number)
